@@ -3,10 +3,13 @@
 		 minWidth="400"
 		 minHeight="300"
 		 creationComplete="creationCompleteHandler();"
-		 currentState="{CONNECTING_STATE}" xmlns:belugafile="com.nbilyk.belugafile.*">
+		 currentState="{CONNECTING_STATE}" xmlns:belugafile="com.nbilyk.belugafile.*" xmlns:effects="com.nbilyk.effects.*">
 
 	<mx:Script>
 		<![CDATA[
+			import com.nbilyk.belugafile.events.FileClientEvent;
+			import __AS3__.vec.Vector;
+			import mx.effects.easing.Sine;
 			import com.nbilyk.utils.ByteArrayUtils;
 			import mx.controls.Alert;
 			import mx.events.CloseEvent;
@@ -84,7 +87,7 @@
 				stratusDao.addEventListener(StratusEvent.CONNECT_FAIL, stratusConnectFailHandler);
 				stratusDao.addEventListener(StratusEvent.SUBSCRIBING_SUCCESS, subscribingSuccessHandler);
 				stratusDao.addEventListener(StratusEvent.SUBSCRIBING_FAIL, subscribingFailHandler);
-				//stratusDao.addEventListener(StratusEvent.SUBSCRIBER_CONNECTED, subscriberConnectedHandler);
+				stratusDao.addEventListener(StratusEvent.SUBSCRIBER_CONNECTED, subscriberConnectedHandler);
 				stratusDao.addEventListener(StratusEvent.SUBSCRIBER_DISCONNECTED, subscriberDisconnectedHandler);
 				
 				stratusDao.connect(STRATUS_DEV_KEY);
@@ -94,7 +97,8 @@
 				var belugaFileClient:BelugaFileClient = new BelugaFileClient();
 				belugaFileClient.addEventListener(FileRequestEvent.FILE_REQUEST, fileRequestHandler);
 				belugaFileClient.addEventListener(FileReceiveEvent.DATA_RECEIVED, fileDataReceivedHandler);
-				belugaFileClient.addEventListener(Event.CANCEL, cancelHandler);
+				belugaFileClient.addEventListener(FileClientEvent.CANCEL_DOWNLOAD, cancelDownloadHandler);
+				belugaFileClient.addEventListener(FileClientEvent.CANCEL_UPLOAD, cancelUploadHandler);
 				return belugaFileClient;
 			}
 			private function stratusConnectSuccessHandler(event:StratusEvent):void {
@@ -102,14 +106,13 @@
 				currentState = PEER_STATE;
 			}
 			private function stratusConnectFailHandler(event:StratusEvent):void {
-				errorString = "Failed to connect to Stratus. Make sure you are connected to the internet and that your network allows UDP connections.";
+				errorString = "Failed to connect to Stratus. Make sure you are connected to the internet and that your network allows for UDP connections.";
 				currentState = ERROR_STATE;
 			}
 			
 			private function subscribingSuccessHandler(event:StratusEvent):void {
 				peerStream = event.stream;
 				currentState = FILES_STATE;
-				if (fileInfos.length) fileInfosChangeHandler(); // Manually fire an update.
 			}
 			private function subscribingFailHandler(event:StratusEvent):void {
 				peerStream = null;
@@ -126,21 +129,22 @@
 				stratusDao.connectToPeer(hostIdInput.text);
 			}
 			private function subscriberConnectedHandler(event:StratusEvent):void {
-				
+				// Send the new subscriber (your peer) whatever information they need on startup.
+				event.stream.send("updateFileInfos", fileInfos); // Send them files we may have selected.
 			}
 			private function subscriberDisconnectedHandler(event:StratusEvent):void {
 				currentState = PEER_STATE;
 				peerStream = null;
 				cancelUpload();
+				cancelDownload();
 			}
 
 			private function fileInfosChangeHandler(event:CollectionEvent = null):void {
-				if (!peerClient) return;
 				stratusDao.sendStream.send("updateFileInfos", fileInfos);
 			}
 		
 			//-------------------------------
-			// File methods
+			// File selection methods
 			//-------------------------------
 		
 			private function selectFiles():void {
@@ -154,22 +158,23 @@
 					fileInfos.addItem(new FileInfo(file));
 				}
 			}
-			
 			private function removeFileHandler(event:Event):void {
 				var row:FileRowView = FileRowView(event.currentTarget);
 				var index:int = fileInfos.getItemIndex(row.fileInfo);
 				files.removeItemAt(index);
 				fileInfos.removeItemAt(index);
 			}
+			
+			//--------------------------
+			// Download file methods
+			//--------------------------
+			
 			private function downloadFileHandler(event:Event):void {
 				var row:FileRowView = FileRowView(event.currentTarget);
 				download(row.fileInfo);
 			}
 			
 			private function download(fileInfo:FileInfo):void {
-				if (inputFileStream) {
-					return;
-				}
 				inputFileInfo = fileInfo;
 				
 				var inputFile:File = File.desktopDirectory.resolvePath(inputFileInfo.name);
@@ -196,12 +201,33 @@
 					}
 				}
 			}
+			private function fileDataReceivedHandler(event:FileReceiveEvent):void {
+				if (!inputFileStream) return;
+				// Write segment then ask for next segment.
+				inputFileStream.position = event.offset;
+				inputFileStream.writeBytes(event.inputBuffer);
+				trace("write: " + event.inputBuffer.length);
+				event.inputBuffer.clear();
+				trace("request position: " + inputFileStream.position);
+				updateDownloadProgressBar(inputFileStream.position, inputFileInfo.size);
+				if (inputFileStream.position == inputFileInfo.size) {
+					// Download complete.
+					// TODO: Handle download complete.
+					inputFileStream.close();
+				} else {
+					stratusDao.sendStream.send("requestFile", inputFileInfo, inputFileStream.position);
+				}
+			}
 			private function inputFileIoErrorHandler(event:IOErrorEvent):void {
-				Alert.show("An error occurred while saving.");
+				handleError("An error occurred while saving.");
 			}
 			private function inputFileSecurityErrorHandler(event:SecurityErrorEvent):void {
-				Alert.show("A security error occurred while saving.");
+				handleError("A security error occurred while saving.");
 			}
+			
+			//---------------------------
+			// Upload file methods
+			//---------------------------
 			
 			/**
 			 * A File has been requested, start sending it over.
@@ -223,10 +249,10 @@
 				transmitOutputBuffer();
 				updateUploadProgressBar(event.offset, event.fileInfo.size);
 				
-				// Same file, different segment.
 				if (event.offset == outputFileInfo.size) {
 					// We're done transferring.
 					trace("transfer complete");
+					// TODO: Handle complete.
 					cancelUpload();
 				}
 			}
@@ -245,39 +271,34 @@
 				stratusDao.sendStream.send("receiveFile", outputBuffer, outputFileStream.position - outputBuffer.length);
 			}
 			
-			private function fileDataReceivedHandler(event:FileReceiveEvent):void {
-				if (!inputFileStream) return;
-				// Write segment then ask for next segment.
-				inputFileStream.position = event.offset;
-				inputFileStream.writeBytes(event.inputBuffer);
-				trace("write: " + event.inputBuffer.length);
-				event.inputBuffer.clear();
-				trace("request position: " + inputFileStream.position);
-				stratusDao.sendStream.send("requestFile", inputFileInfo, inputFileStream.position);
-				updateDownloadProgressBar(inputFileStream.position, inputFileInfo.size);
-				if (inputFileStream.position == inputFileInfo.size) {
-					inputFileStream.close();
-				}
-			}
+			//--------------------------------
+			// Cancel handlers and methods
+			//--------------------------------
 			
-			private function cancelHandler(event:Event):void {
-				if (outputFileInfo) cancelUpload();
-				if (inputFileInfo) cancelDownload();
+			private function cancelDownloadHandler(event:Event):void {
+				cancelDownload();
 			}
-			public function cancelUpload():void {
-				stratusDao.sendStream.send("cancel");
-				outputFileInfo = null;
-				if (outputFileStream) outputFileStream.close();
-				outputFileStream = null;
-				updateUploadProgressBar(0, 0);
+			private function cancelUploadHandler(event:Event):void {
+				cancelUpload();
 			}
 			public function cancelDownload():void {
-				stratusDao.sendStream.send("cancel");
-				if (inputFileStream) inputFileStream.close();
+				if (!inputFileStream) return;
+				stratusDao.sendStream.send("cancelUpload");
+				
+				inputFileStream.close();
 				inputFileStream = null;
 				inputFileInfo = null;
-				updateDownloadProgressBar(0, 0);
+				
 			}
+			public function cancelUpload():void {
+				if (!outputFileStream) return;
+				stratusDao.sendStream.send("cancelUpload");
+				
+				outputFileInfo = null;
+				outputFileStream.close();
+				outputFileStream = null;
+			}
+			
 			
 			public function handleError(message:String):void {
 				messageNotifier.showMessage(message, true);
@@ -314,31 +335,46 @@
 	<mx:Boolean id="youHaveFiles">{fileInfos.length > 0}</mx:Boolean>
 	<mx:Boolean id="peerHasFiles">{peerClient.fileInfos.length > 0}</mx:Boolean>
 	
+	<mx:transitions>
+		<mx:Transition fromState="*" toState="*">
+			<mx:Fade target="{this}" duration="500" easingFunction="{Sine.easeOut}"/>
+		</mx:Transition>
+	</mx:transitions>
+	
 	<mx:states>
 		<mx:State name="{CONNECTING_STATE}">
-			<mx:AddChild>
+			<mx:AddChild position="before" relativeTo="{footer}">
 				<mx:Text width="100%" text="Connecting to Stratus..." styleName="connectingMessage"/>
+			</mx:AddChild>
+			<mx:AddChild position="before" relativeTo="{footer}">
+				<mx:Text width="100%" styleName="udpNote">
+					<mx:htmlText><![CDATA[Note: Your network connection must allow for UDP traffic.]]></mx:htmlText>
+				</mx:Text>
 			</mx:AddChild>
 		</mx:State>
 		<mx:State name="{PEER_STATE}">
-			<mx:AddChild>
-				<mx:VBox width="100%" styleName="contentContainer" filters="{[dropShadowFilter]}">
+			<mx:AddChild position="before" relativeTo="{footer}">
+				<mx:VBox width="100%" styleName="contentContainer" filters="{[dropShadowFilter]}" verticalGap="0">
+					<mx:Text text="Instructions" styleName="sectionLabel"/>
 					<mx:Text width="100%">
-						<mx:htmlText><![CDATA[<b>Instructions:</b> Give your host id to the person with whom you wish to connect.  Once connected, you may select the files that you would like to share.<br><i>Note: Your network connection must allow for UDP traffic.</i> ]]></mx:htmlText>
+						<mx:htmlText><![CDATA[Give your host id to the person with whom you wish to connect.  Once connected, you may select the files that you would like to share.]]></mx:htmlText>
 					</mx:Text>
-					<mx:Text text="Your host id:" styleName="label"/>
+					<mx:Spacer height="5"/>
+					<mx:Text text="Your Host ID" styleName="sectionLabel"/>
 					<mx:HBox horizontalGap="0" verticalAlign="middle">
 						<mx:Text text="{hostId}" styleName="hostId"/>
 						<mx:LinkButton styleName="copyButton" toolTip="Copy your host id to the clipboard." click="System.setClipboard(hostId);"/>
 					</mx:HBox>
-					<mx:Text text="Peer's host id:" styleName="label"/>
+					<mx:Spacer height="5"/>
+					<mx:Text text="Their Host ID" styleName="sectionLabel"/>
 					<mx:TextInput id="hostIdInput" width="520"  styleName="hostId"/>
+					<mx:Spacer height="5"/>
 					<mx:Button label="Connect to peer" click="connectToPeer();"/>
 				</mx:VBox>
 			</mx:AddChild>
 		</mx:State>
 		<mx:State name="{FILES_STATE}">
-			<mx:AddChild>
+			<mx:AddChild position="before" relativeTo="{footer}">
 				<mx:VBox width="100%" styleName="contentContainer" filters="{[dropShadowFilter]}">
 					<mx:Text text="Your files" styleName="sectionLabel"/>
 					<mx:VBox styleName="sectionContainer" width="100%">
@@ -346,7 +382,7 @@
 							<mx:htmlText><![CDATA[Add files to be shared using the 'Add files' button below.]]></mx:htmlText>
 						</mx:Text>
 						
-						<mx:Grid width="100%" visible="{youHaveFiles}" includeInLayout="{youHaveFiles}">
+						<mx:Grid id="yourFilesGrid" width="100%" visible="{youHaveFiles}" includeInLayout="{youHaveFiles}">
 							<mx:GridRow width="100%">
 								<mx:GridItem width="40%">
 									<mx:Text text="Name" styleName="columnHeader"/>
@@ -354,8 +390,11 @@
 								<mx:GridItem width="20%">
 									<mx:Text text="Size" styleName="columnHeader"/>
 								</mx:GridItem>
+								<mx:GridItem>
+									<mx:Text text="Progress" styleName="columnHeader"/>
+								</mx:GridItem>
 							</mx:GridRow>
-							<mx:Repeater id="filesRpt" dataProvider="{fileInfos}" recycleChildren="true">
+							<mx:Repeater id="filesRpt" dataProvider="{fileInfos}" recycleChildren="false">
 								<belugafile:FileRowView fileInfo="{FileInfo(filesRpt.currentItem)}" isYou="true" width="100%" clear="removeFileHandler(event);" cancel="cancelUpload();"/>
 							</mx:Repeater>
 						</mx:Grid>
@@ -368,7 +407,7 @@
 							<mx:htmlText><![CDATA[They have not added any files yet.]]></mx:htmlText>
 						</mx:Text>
 						
-						<mx:Grid width="100%" visible="{peerHasFiles}" includeInLayout="{peerHasFiles}">
+						<mx:Grid id="theirFilesGrid" width="100%" visible="{peerHasFiles}" includeInLayout="{peerHasFiles}">
 							<mx:GridRow width="100%">
 								<mx:GridItem width="40%">
 									<mx:Text text="Name" styleName="columnHeader"/>
@@ -376,8 +415,11 @@
 								<mx:GridItem width="20%">
 									<mx:Text text="Size" styleName="columnHeader"/>
 								</mx:GridItem>
+								<mx:GridItem>
+									<mx:Text text="Progress" styleName="columnHeader"/>
+								</mx:GridItem>
 							</mx:GridRow>
-							<mx:Repeater id="peerFilesRpt" dataProvider="{peerClient.fileInfos}" recycleChildren="true">
+							<mx:Repeater id="peerFilesRpt" dataProvider="{peerClient.fileInfos}" recycleChildren="false">
 								<belugafile:FileRowView fileInfo="{FileInfo(peerFilesRpt.currentItem)}" isYou="false" width="100%" open="downloadFileHandler(event);" cancel="cancelDownload();"/>
 							</mx:Repeater>
 						</mx:Grid>
@@ -395,6 +437,10 @@
 		</mx:State>
 	</mx:states>
 	
-	<mx:Text text="BelugaFile" styleName="logoText"/>
-	
+	<mx:Text id="header" text="BelugaFile" styleName="logoText"/>
+	<mx:Text id="footer" styleName="footerText" width="100%">
+		<mx:htmlText>
+			<![CDATA[BelugaFile © 2009 Nicholas Bilyk<br><a href="http://www.belugafile.com"><font color="#000099">www.belugafile.com</font></a>]]>
+		</mx:htmlText>
+	</mx:Text>
 </mx:VBox>

@@ -1,4 +1,5 @@
 /* CSS file */
+
 global {
 	font-size: 14;
 	font-family: Arial;
@@ -27,9 +28,8 @@ Button {
 	horizontal-gap: 2;	
 }
 
-.contentContainer {
-	background-color: white;
-	background-alpha: .95;
+Canvas.contentContainer {
+	background-color: #FBFCFD;
 	border-style: solid;
 	border-color: #999999;
 	corner-radius: 8;
@@ -57,7 +57,7 @@ Text.hostId {
 Text.sectionLabel {
 	font-size: 15;
 	fontWeight: bold;
-	color: #4E515F;
+	color: #1E2A4E;
 	
 }
 VBox.sectionContainer {
@@ -72,10 +72,6 @@ VBox.sectionContainer {
 Text.columnHeader {
 	font-weight: bold;
 }
-.label {
-	font-weight: bold;	
-}
-
 
 /* Button icons */
 
@@ -93,4 +89,14 @@ Button.copyButton {
 }
 Button.cancelButton {
 	icon: Embed(source='images/cancl_16.png');
+}
+
+.udpNote {
+	text-align: center;
+	font-size: 12;
+	font-style: italic;
+}
+.footerText {
+	text-align: center;
+	font-size: 12;
 }
