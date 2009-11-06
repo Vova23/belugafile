@@ -9,19 +9,19 @@
 	
 	<mx:Script>
 		<![CDATA[
+			import mx.events.CloseEvent;
+			import mx.controls.Alert;
 			import com.nbilyk.belugafile.vo.FileInfo;
+			
+			[Bindable] public var isYou:Boolean;
+			[Bindable] public var message:String;
 			
 			[Bindable] private var isTransferring:Boolean;
 			private var _fileInfo:FileInfo;
-			private var _isYou:Boolean;
-			private var _pending:Boolean;
 			
 			public function setProgress(bytesLoaded:Number, bytesTotal:Number):void {
 				if (!initialized) return;
-				progressBar.visible = bytesTotal > 0;
-				progressBar.includeInLayout = progressBar.visible;
-				pendingText.visible = bytesTotal < 0;
-				pendingText.includeInLayout = pendingText.visible;
+				isTransferring = bytesTotal > 0;
 				
 				progressBar.setProgress(bytesLoaded, bytesTotal);
 				var dir:String = (isYou) ? "Uploading... " : "Downloading... ";
@@ -36,22 +36,6 @@
 				_fileInfo = value;
 			}
 			
-			[Bindable]
-			public function get isYou():Boolean {
-				return _isYou;
-			}
-			public function set isYou(value:Boolean):void {
-				_isYou = value;
-			}
-			
-			[Bindable]
-			public function get pending():Boolean {
-				return _pending;
-			}
-			public function set pending(value:Boolean):void {
-				_pending = value;
-			}
-			
 			private function removeClickHandler():void {
 				dispatchEvent(new Event(Event.CLEAR));
 			}
@@ -59,7 +43,12 @@
 				dispatchEvent(new Event(Event.OPEN));
 			}
 			private function cancelClickHandler():void {
-				dispatchEvent(new Event(Event.CANCEL));
+				Alert.show("Are you sure you want to cancel the transfer?", "Confirmation", Alert.OK | Alert.CANCEL, null, confirmCancelCloseHandler, null, Alert.CANCEL);
+			}
+			private function confirmCancelCloseHandler(event:CloseEvent):void {
+				if (event.detail == Alert.OK) {
+					dispatchEvent(new Event(Event.CANCEL));
+				}
 			}
 			
 		]]>
@@ -72,15 +61,17 @@
 	<mx:GridItem width="20%">
 		<mx:Text text="{fileSizeFormatter.format(fileInfo.size)}"/>
 	</mx:GridItem>
-	<mx:GridItem visible="{pending}">
-		<mx:HBox width="100%">
-			<mx:ProgressBar id="progressBar" mode="manual" width="100%"/>
-			<mx:Text id="pendingText" text="Pending..." />
+	<mx:GridItem>
+		<mx:HBox width="100%" visible="{isTransferring}" includeInLayout="{isTransferring}">
+			<mx:ProgressBar id="progressBar" mode="manual"/>
+			<mx:Spacer width="100%"/>
 			<mx:LinkButton styleName="cancelButton" click="cancelClickHandler()" toolTip="Cancel the transfer"/>
 		</mx:HBox>
-	</mx:GridItem>
-	<mx:GridItem visible="{!pending}" includeInLayout="{!pending}">
-		<mx:Button styleName="deleteButton" click="removeClickHandler();" visible="{isYou}" includeInLayout="{isYou}"/>
-		<mx:Button styleName="saveButton" click="transferClickHandler();" visible="{!isYou}" includeInLayout="{!isYou}"/>
+		<mx:HBox width="100%" visible="{!isTransferring}" includeInLayout="{!isTransferring}">
+			<mx:Label text="{message}" truncateToFit="true"/> 
+			<mx:Spacer width="100%"/>
+			<mx:Button styleName="deleteButton" click="removeClickHandler();" visible="{isYou}" includeInLayout="{isYou}" toolTip="Remove this file"/>
+			<mx:Button styleName="saveButton" click="transferClickHandler();" visible="{!isYou}" includeInLayout="{!isYou}" toolTip="Download this file"/>
+		</mx:HBox>
 	</mx:GridItem>
 </mx:GridRow>
