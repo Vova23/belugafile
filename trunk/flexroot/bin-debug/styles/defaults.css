@@ -1,0 +1,96 @@
+/* CSS file */
+global {
+	font-size: 14;
+	font-family: Arial;
+	color: black;
+}
+Application {
+	backgroundGradientAlphas: 1.0, 1.0;
+	backgroundGradientColors: #C6C9CB, #FFFFFF;
+}
+
+HRule {
+}
+
+Main, .paddedBox {
+	padding-left: 5;
+	padding-top: 5;
+	padding-right: 5;
+	padding-bottom: 5;	
+}
+Button {
+	font-size: 12;
+	padding-left: 3;
+	padding-top: 3;
+	padding-right: 3;
+	padding-bottom: 3;
+	horizontal-gap: 2;	
+}
+
+.contentContainer {
+	background-color: white;
+	background-alpha: .95;
+	border-style: solid;
+	border-color: #999999;
+	corner-radius: 8;
+	padding-left: 5;
+	padding-top: 5;
+	padding-right: 5;
+	padding-bottom: 5;
+}
+
+Text.logoText {
+	font-size: 18;
+	color: #1B262E;
+}
+
+Text.connectingMessage {
+	font-size: 18;
+	color: #0E0E4C;
+}
+Text.hostId {
+	font-size: 12;	
+}
+
+/* Files state */
+
+Text.sectionLabel {
+	font-size: 15;
+	fontWeight: bold;
+	color: #4E515F;
+	
+}
+VBox.sectionContainer {
+	border-style: solid;
+	border-color: #999999;
+	corner-radius: 8;
+	padding-left: 5;
+	padding-top: 5;
+	padding-right: 5;
+	padding-bottom: 5;
+}
+Text.columnHeader {
+	font-weight: bold;
+}
+.label {
+	font-weight: bold;	
+}
+
+
+/* Button icons */
+
+Button.addButton {
+	icon: Embed(source='images/add_16.png');
+}
+Button.saveButton {
+	icon: Embed(source="images/save_16.png");	
+}
+Button.deleteButton {
+	icon: Embed(source='images/del_16.png');
+}
+Button.copyButton {
+	icon: Embed(source='images/copy_16.png');
+}
+Button.cancelButton {
+	icon: Embed(source='images/cancl_16.png');
+}
