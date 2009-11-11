@@ -3,15 +3,18 @@
 		 minWidth="400"
 		 minHeight="300"
 		 creationComplete="creationCompleteHandler();"
-		 currentState="{CONNECTING_STATE}" xmlns:belugafile="com.nbilyk.belugafile.*" xmlns:effects="com.nbilyk.effects.*">
+		 currentState="{CONNECTING_STATE}" xmlns:belugafile="com.nbilyk.belugafile.*" xmlns:effects="com.nbilyk.effects.*" xmlns:nbilyk="http://www.nbilyk.com/2009">
 
 	<mx:Script>
 		<![CDATA[
+			import mx.containers.TitleWindow;
+			import com.nbilyk.belugafile.vo.Preferences;
+			import mx.core.Application;
+			import mx.managers.PopUpManager;
 			import com.nbilyk.belugafile.events.FileClientEvent;
 			import __AS3__.vec.Vector;
 			import mx.effects.easing.Sine;
 			import com.nbilyk.utils.ByteArrayUtils;
-			import mx.controls.Alert;
 			import mx.events.CloseEvent;
 			import flash.utils.setInterval;
 			import com.nbilyk.belugafile.events.FileReceiveEvent;
@@ -35,8 +38,6 @@
 			private static const ERROR_STATE:String = "errorState";
 			
 			
-			private static const READ_AHEAD:Number = 1 * 1024 * 1024; // 1M
-			
 			private var files:ArrayCollection = new ArrayCollection(); /* Type File */
 			[Bindable] private var fileInfos:ArrayCollection = new ArrayCollection(); /* Type FileInfo */
 			
@@ -45,11 +46,14 @@
 			[Bindable] private var hostId:String;
 			private var _peerStream:NetStream;
 			
-			private var outputFileInfo:FileInfo;
-			private var outputFileStream:FileStream;
+			private var preferences:Preferences = new Preferences(true);
 			
-			private var inputFileInfo:FileInfo;
-			private var inputFileStream:FileStream;
+			private var uploadFileInfo:FileInfo;
+			private var uploadFileStream:FileStream;
+			
+			private var downloadFileInfo:FileInfo;
+			private var downloadFile:File;
+			private var downloadFileStream:FileStream;
 			
 			private function creationCompleteHandler():void {
 				connectToStratus();
@@ -97,8 +101,8 @@
 				var belugaFileClient:BelugaFileClient = new BelugaFileClient();
 				belugaFileClient.addEventListener(FileRequestEvent.FILE_REQUEST, fileRequestHandler);
 				belugaFileClient.addEventListener(FileReceiveEvent.DATA_RECEIVED, fileDataReceivedHandler);
-				belugaFileClient.addEventListener(FileClientEvent.CANCEL_DOWNLOAD, cancelDownloadHandler);
-				belugaFileClient.addEventListener(FileClientEvent.CANCEL_UPLOAD, cancelUploadHandler);
+				belugaFileClient.addEventListener(FileClientEvent.DOWNLOAD_CANCEL, downloadCancelHandler);
+				belugaFileClient.addEventListener(FileClientEvent.UPLOAD_CANCEL, uploadCancelHandler);
 				return belugaFileClient;
 			}
 			private function stratusConnectSuccessHandler(event:StratusEvent):void {
@@ -148,11 +152,17 @@
 			//-------------------------------
 		
 			private function selectFiles():void {
-				var file:File = new File("D:/Download/games/SC-1.15.2-enUS");
+				var file:File;
+				if (preferences.lastUploadDirectory) file = new File(preferences.lastUploadDirectory);
+				else file = File.desktopDirectory;
 				file.addEventListener(FileListEvent.SELECT_MULTIPLE, filesSelectHandler);
 				file.browseForOpenMultiple("Select files");
 			}
 			private function filesSelectHandler(event:FileListEvent):void {
+				if (event.files.length) {
+					preferences.lastUploadDirectory = File(event.files[0]).parent.nativePath;
+					preferences.save();
+				}
 				for each (var file:File in event.files) {
 					files.addItem(file);
 					fileInfos.addItem(new FileInfo(file));
@@ -174,49 +184,75 @@
 				download(row.fileInfo);
 			}
 			
+			/**
+			 * Ask where to save the file.
+			 */
 			private function download(fileInfo:FileInfo):void {
-				inputFileInfo = fileInfo;
+				if (downloadFileStream) return; // There is already an active download.
+				downloadFileInfo = fileInfo;
 				
-				var inputFile:File = File.desktopDirectory.resolvePath(inputFileInfo.name);
-				inputFile.addEventListener(IOErrorEvent.IO_ERROR, inputFileIoErrorHandler);
-				inputFile.addEventListener(SecurityErrorEvent.SECURITY_ERROR, inputFileSecurityErrorHandler);
-				inputFile.addEventListener(Event.SELECT, fileSaveSelectHandler);
-				inputFile.browseForSave("Save As");
+				if (preferences.lastDownloadDirectory) downloadFile = new File(preferences.lastDownloadDirectory).resolvePath(downloadFileInfo.name);
+				else downloadFile = File.desktopDirectory.resolvePath(downloadFileInfo.name);
+				downloadFile.addEventListener(IOErrorEvent.IO_ERROR, inputFileIoErrorHandler);
+				downloadFile.addEventListener(SecurityErrorEvent.SECURITY_ERROR, inputFileSecurityErrorHandler);
+				downloadFile.addEventListener(Event.SELECT, fileSaveSelectHandler);
+				downloadFile.browseForSave("Save As");
 			}
+			
+			/**
+			 * We know where to save the file, ask the peer to send the first segment.
+			 * If the file already exists, ask if we want to resume or overwrite.
+			 */
 			private function fileSaveSelectHandler(event:Event):void {
-				var inputFile:File = File(event.currentTarget);
-				trace(inputFile.nativePath);
-				trace("exists: " + inputFile.exists);
-				if (inputFile.exists) {
-					Alert.show("This file exists."); // TODO: Allow resuming
+				preferences.lastDownloadDirectory = downloadFile.parent.nativePath;
+				preferences.save();
+				if (downloadFile.exists) {
+					var titleWindow:TitleWindow = new TitleWindow();
+					titleWindow.title = "File already exists.";
+					var resumePrompt:ResumePrompt = new ResumePrompt();
+					resumePrompt.percentWidth = 100;
+					resumePrompt.addEventListener(CloseEvent.CLOSE, resumePromptCloseHandler, false, 0, true);
+					titleWindow.addChild(resumePrompt);
+					PopUpManager.addPopUp(titleWindow, DisplayObject(Application.application), true);
+					PopUpManager.centerPopUp(titleWindow);
 				} else {
-					// Begin writing file
-					inputFileStream = new FileStream();
-					try {
-						inputFileStream.open(inputFile, FileMode.WRITE);
-						stratusDao.sendStream.send("requestFile", inputFileInfo, 0);
-					} catch (error:Error) {
-						inputFileStream = null;
-						Alert.show("This file cannot be opened. It may already be in use.");
-					}
+					beginWriting(0);
 				}
 			}
-			private function fileDataReceivedHandler(event:FileReceiveEvent):void {
-				if (!inputFileStream) return;
-				// Write segment then ask for next segment.
-				inputFileStream.position = event.offset;
-				inputFileStream.writeBytes(event.inputBuffer);
-				trace("write: " + event.inputBuffer.length);
-				event.inputBuffer.clear();
-				trace("request position: " + inputFileStream.position);
-				updateDownloadProgressBar(inputFileStream.position, inputFileInfo.size);
-				if (inputFileStream.position == inputFileInfo.size) {
-					// Download complete.
-					// TODO: Handle download complete.
-					inputFileStream.close();
+			private function resumePromptCloseHandler(event:CloseEvent):void {
+				if (event.detail == ResumePrompt.OVERWRITE) {
+					beginWriting(0);
+				} else if (event.detail == ResumePrompt.RESUME) {
+					beginWriting(downloadFile.size);
 				} else {
-					stratusDao.sendStream.send("requestFile", inputFileInfo, inputFileStream.position);
+					// Cancel
+					downloadFile = null;
 				}
+				PopUpManager.removePopUp(TitleWindow(ResumePrompt(event.currentTarget).parent));
+			}
+			private function beginWriting(position:Number):void {
+				// Begin writing file
+				downloadFileStream = new FileStream();
+				try {
+					var fileMode:String = (position == 0) ? FileMode.WRITE : FileMode.UPDATE;
+					downloadFileStream.open(downloadFile, fileMode);
+					stratusDao.sendStream.send("requestFile", downloadFileInfo, position);
+				} catch (error:Error) {
+					downloadFileStream = null;
+					handleError("This file cannot be opened. It may already be in use.");
+				}
+			}
+			
+			/**
+			 * The Sender has sent file data. Write it to file and then ask for the next segment.
+			 */
+			private function fileDataReceivedHandler(event:FileReceiveEvent):void {
+				if (!downloadFileStream) return;
+				downloadFileStream.position = event.offset;
+				downloadFileStream.writeBytes(event.inputBuffer);
+				event.inputBuffer.clear();
+				updateDownloadProgressBar(downloadFileStream.position, downloadFileInfo.size);
+				if (event.autoRequestNext) stratusDao.sendStream.send("requestFile", downloadFileInfo, downloadFileStream.position);
 			}
 			private function inputFileIoErrorHandler(event:IOErrorEvent):void {
 				handleError("An error occurred while saving.");
@@ -233,87 +269,105 @@
 			 * A File has been requested, start sending it over.
 			 */
 			private function fileRequestHandler(event:FileRequestEvent):void {
-				if (!outputFileInfo) {
+				if (!uploadFileStream) {
 					var fileToSend:File = getFileByFileInfo(event.fileInfo);
 					if (!fileToSend) return;
 					
-					outputFileStream = new FileStream();
 					// Initializing a new file transfer.
-					outputFileInfo = event.fileInfo;
-					outputFileStream.readAhead = READ_AHEAD;
-					outputFileStream.openAsync(fileToSend, FileMode.READ);
+					uploadFileStream = new FileStream();
+					uploadFileInfo = event.fileInfo;
+					uploadFileStream.readAhead = uploadFileInfo.getReadAhead();
+					uploadFileStream.openAsync(fileToSend, FileMode.READ);
 				} else {
-					if (outputFileInfo.path != event.fileInfo.path) return; // Wrong file.
+					if (uploadFileInfo.path != event.fileInfo.path) return; // Wrong file.
 				}
-				outputFileStream.position = event.offset;
-				transmitOutputBuffer();
+				
 				updateUploadProgressBar(event.offset, event.fileInfo.size);
 				
-				if (event.offset == outputFileInfo.size) {
-					// We're done transferring.
-					trace("transfer complete");
-					// TODO: Handle complete.
+				if (event.offset < event.fileInfo.size) {
+					uploadFileStream.position = event.offset;
+					transmitOutputBuffer();
+				} else {
+					// Upload complete.
 					cancelUpload();
 				}
 			}
 			private function transmitOutputBuffer():void {
-				if (!outputFileStream) return;
+				if (!uploadFileStream) return;
 				
-				// Check read buffer.
-				if (outputFileStream.bytesAvailable < READ_AHEAD && outputFileStream.position + outputFileStream.bytesAvailable < outputFileInfo.size) {
+				// Wait until the read buffer is full.
+				if (uploadFileStream.bytesAvailable < uploadFileInfo.getReadAhead() && uploadFileStream.position + uploadFileStream.bytesAvailable < uploadFileInfo.size) {
 					callLater(transmitOutputBuffer);
 					return; // Read buffer is not full.
 				}
 				
 				var outputBuffer:ByteArray = new ByteArray();
-				outputFileStream.readBytes(outputBuffer);
-				trace("transmit");
-				stratusDao.sendStream.send("receiveFile", outputBuffer, outputFileStream.position - outputBuffer.length);
+				uploadFileStream.readBytes(outputBuffer);
+				stratusDao.sendStream.send("receiveFile", outputBuffer, uploadFileStream.position - outputBuffer.length);
 			}
 			
 			//--------------------------------
 			// Cancel handlers and methods
 			//--------------------------------
 			
-			private function cancelDownloadHandler(event:Event):void {
-				cancelDownload();
-			}
-			private function cancelUploadHandler(event:Event):void {
+			private function downloadCancelHandler(event:Event):void {
 				cancelUpload();
 			}
+			private function uploadCancelHandler(event:Event):void {
+				cancelDownload();
+			}
 			public function cancelDownload():void {
-				if (!inputFileStream) return;
-				stratusDao.sendStream.send("cancelUpload");
+				trace("cancel download: " + downloadFileStream);
+				if (!downloadFileStream) return;
+				updateDownloadProgressBar(0, 0);
+				stratusDao.sendStream.send("cancelDownload");
 				
-				inputFileStream.close();
-				inputFileStream = null;
-				inputFileInfo = null;
+				downloadFileStream.close();
+				downloadFileStream = null;
+				downloadFileInfo = null;
 				
 			}
 			public function cancelUpload():void {
-				if (!outputFileStream) return;
+				trace("cancel upload: " + uploadFileStream);
+				if (!uploadFileStream) return;
+				updateUploadProgressBar(0, 0);
 				stratusDao.sendStream.send("cancelUpload");
 				
-				outputFileInfo = null;
-				outputFileStream.close();
-				outputFileStream = null;
+				uploadFileInfo = null;
+				uploadFileStream.close();
+				uploadFileStream = null;
 			}
-			
-			
-			public function handleError(message:String):void {
-				messageNotifier.showMessage(message, true);
-			}
-			
 			
 			//------------------------
 			// Utility methods
 			//------------------------
 			
 			private function updateUploadProgressBar(bytesLoaded:Number, bytesTotal:Number):void {
-				
+				var uploadFileRow:FileRowView = getUploadFileRow(uploadFileInfo);
+				if (!uploadFileRow) return;
+				uploadFileRow.setProgress(bytesLoaded, bytesTotal);
 			}
 			private function updateDownloadProgressBar(bytesLoaded:Number, bytesTotal:Number):void {
-				
+				var downloadFileRow:FileRowView = getDownloadFileRow(downloadFileInfo);
+				if (!downloadFileRow) return;
+				downloadFileRow.setProgress(bytesLoaded, bytesTotal);
+			}
+			
+			private function getUploadFileRow(fileInfo:FileInfo):FileRowView {
+				for each (var child:DisplayObject in yourFilesGrid.getChildren()) {
+					if (child is FileRowView) {
+						if (FileRowView(child).fileInfo.path == fileInfo.path) return FileRowView(child);
+					}
+				}
+				return null;
+			}
+			private function getDownloadFileRow(fileInfo:FileInfo):FileRowView {
+				for each (var child:DisplayObject in theirFilesGrid.getChildren()) {
+					if (child is FileRowView) {
+						if (FileRowView(child).fileInfo.path == fileInfo.path) return FileRowView(child);
+					}
+				}
+				return null;
 			}
 			
 			public function getFileByFileInfo(fileInfo:FileInfo):File {
@@ -324,6 +378,14 @@
 					}
 				}
 				return null;
+			}
+			
+			//----------------------
+			// Error handling
+			//----------------------
+			
+			public function handleError(message:String):void {
+				messageNotifier.showMessage(message, true);
 			}
 			
 		]]>
@@ -437,10 +499,12 @@
 		</mx:State>
 	</mx:states>
 	
-	<mx:Text id="header" text="BelugaFile" styleName="logoText"/>
-	<mx:Text id="footer" styleName="footerText" width="100%">
-		<mx:htmlText>
-			<![CDATA[BelugaFile © 2009 Nicholas Bilyk<br><a href="http://www.belugafile.com"><font color="#000099">www.belugafile.com</font></a>]]>
-		</mx:htmlText>
-	</mx:Text>
+	<mx:VBox id="footer" horizontalAlign="center" width="100%" verticalGap="2">
+		<nbilyk:CSSImage styleName="logo"/>
+		<mx:Text styleName="footerText" width="100%">
+			<mx:htmlText>
+				<![CDATA[© 2009 Nicholas Bilyk<br><a href="http://www.belugafile.com"><font color="#000099">www.belugafile.com</font></a>]]>
+			</mx:htmlText>
+		</mx:Text>
+	</mx:VBox>
 </mx:VBox>

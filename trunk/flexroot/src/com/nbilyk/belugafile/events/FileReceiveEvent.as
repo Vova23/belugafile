@@ -5,6 +5,7 @@ package com.nbilyk.belugafile.events {
 	public class FileReceiveEvent extends Event {
 		public static const DATA_RECEIVED:String = "dataReceived";
 
+		public var autoRequestNext:Boolean = true;
 		public var inputBuffer:ByteArray;
 		public var offset:uint = 0;
 
