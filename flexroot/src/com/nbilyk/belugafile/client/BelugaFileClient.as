@@ -5,7 +5,6 @@ package com.nbilyk.belugafile.client {
 	import com.nbilyk.belugafile.vo.FileInfo;
 	import com.nbilyk.stratus.StratusClient;
 	
-	import flash.events.Event;
 	import flash.net.registerClassAlias;
 	import flash.utils.ByteArray;
 	
@@ -14,8 +13,8 @@ package com.nbilyk.belugafile.client {
 	[Bindable]
 	[Event(name="fileRequest", type="com.nbilyk.belugafile.events.FileRequestEvent")]
 	[Event(name="dataReceived", type="com.nbilyk.belugafile.events.FileReceiveEvent")]
-	[Event(name="cancelDownload", type="com.nbilyk.belugafile.events.FileClientEvent")]
-	[Event(name="cancelUpload", type="com.nbilyk.belugafile.events.FileClientEvent")]
+	[Event(name="downloadCancel", type="com.nbilyk.belugafile.events.FileClientEvent")]
+	[Event(name="uploadCancel", type="com.nbilyk.belugafile.events.FileClientEvent")]
 	public class BelugaFileClient extends StratusClient {
 
 		[ArrayElementType("com.nbilyk.belugafile.vo.FileInfo")]
@@ -31,7 +30,8 @@ package com.nbilyk.belugafile.client {
 		}
 		public function requestFile(fileInfo:FileInfo, offset:uint = 0):void {
 			if (offset > fileInfo.size) throw new Error("offset cannot be greater than the file size");
-			dispatchEvent(new FileRequestEvent(FileRequestEvent.FILE_REQUEST, fileInfo, offset));
+			var event:FileRequestEvent = new FileRequestEvent(FileRequestEvent.FILE_REQUEST, fileInfo, offset);
+			dispatchEvent(event);
 		}
 		public function receiveFile(inputBuffer:ByteArray, offset:uint):void {
 			dispatchEvent(new FileReceiveEvent(FileReceiveEvent.DATA_RECEIVED, inputBuffer, offset));
@@ -40,13 +40,13 @@ package com.nbilyk.belugafile.client {
 		 * Call to cancel a file upload
 		 */
 		public function cancelUpload():void {
-			dispatchEvent(new FileClientEvent(FileClientEvent.CANCEL_UPLOAD));
+			dispatchEvent(new FileClientEvent(FileClientEvent.UPLOAD_CANCEL));
 		}
 		/**
 		 * Call to cancel a file download
 		 */
 		public function cancelDownload():void {
-			dispatchEvent(new FileClientEvent(FileClientEvent.CANCEL_DOWNLOAD));
+			dispatchEvent(new FileClientEvent(FileClientEvent.DOWNLOAD_CANCEL));
 		}
 	}
 }

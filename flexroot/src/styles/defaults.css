@@ -7,7 +7,11 @@ global {
 }
 Application {
 	backgroundGradientAlphas: 1.0, 1.0;
-	backgroundGradientColors: #C6C9CB, #FFFFFF;
+	backgroundGradientColors: #ccd4e8, #ffffff;
+}
+
+CSSImage.logo {
+	image: Embed(source="assets/assets.swf", symbol="Logo");
 }
 
 HRule {
@@ -29,7 +33,7 @@ Button {
 }
 
 Canvas.contentContainer {
-	background-color: #FBFCFD;
+	background-color: #fbfcfd;
 	border-style: solid;
 	border-color: #999999;
 	corner-radius: 8;
@@ -51,6 +55,11 @@ Text.connectingMessage {
 Text.hostId {
 	font-size: 12;	
 }
+Alert {
+	background-color: white;
+	color: black;
+}
+
 
 /* Files state */
 

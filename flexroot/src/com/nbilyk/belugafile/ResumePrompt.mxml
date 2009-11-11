@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:VBox xmlns:mx="http://www.adobe.com/2006/mxml">
+	<mx:Metadata>
+		[Event(name="close", type="mx.events.CloseEvent")]
+	</mx:Metadata>
+	<mx:Script>
+		<![CDATA[
+			public static const OVERWRITE:int = 1;
+			public static const RESUME:int = 2;
+			public static const CANCEL:int = 3;
+		
+			import mx.events.CloseEvent;
+		]]>
+	</mx:Script>
+	
+	<mx:Text width="100%">
+		<mx:htmlText><![CDATA[This file already exists.]]></mx:htmlText>
+	</mx:Text>
+	<mx:HBox width="100%" horizontalAlign="center">
+		<mx:Button label="Overwrite" click="dispatchEvent(new CloseEvent(CloseEvent.CLOSE, false, false, OVERWRITE));"/>
+		<mx:Button label="Resume" click="dispatchEvent(new CloseEvent(CloseEvent.CLOSE, false, false, RESUME));"/>
+		<mx:Button label="Cancel" click="dispatchEvent(new CloseEvent(CloseEvent.CLOSE, false, false, CANCEL));"/>
+	</mx:HBox>
+</mx:VBox>
