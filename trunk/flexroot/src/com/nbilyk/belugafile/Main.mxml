@@ -3,7 +3,10 @@
 		 minWidth="400"
 		 minHeight="300"
 		 creationComplete="creationCompleteHandler();"
-		 currentState="{CONNECTING_STATE}" xmlns:belugafile="com.nbilyk.belugafile.*" xmlns:effects="com.nbilyk.effects.*" xmlns:nbilyk="http://www.nbilyk.com/2009">
+		 currentState="{CONNECTING_STATE}"
+		 xmlns:belugafile="com.nbilyk.belugafile.*"
+		 xmlns:effects="com.nbilyk.effects.*"
+		 xmlns:nbilyk="http://www.nbilyk.com/2009">
 
 	<mx:Script>
 		<![CDATA[
@@ -58,6 +61,8 @@
 			private function creationCompleteHandler():void {
 				connectToStratus();
 				fileInfos.addEventListener(CollectionEvent.COLLECTION_CHANGE, fileInfosChangeHandler);
+				
+				tracker.trackPageview("/belugafile air");
 			}
 			
 			//--------------------------------
@@ -182,6 +187,8 @@
 			private function downloadFileHandler(event:Event):void {
 				var row:FileRowView = FileRowView(event.currentTarget);
 				download(row.fileInfo);
+				
+				tracker.trackPageview("/belugafile air/file download");
 			}
 			
 			/**
@@ -317,7 +324,6 @@
 				cancelDownload();
 			}
 			public function cancelDownload():void {
-				trace("cancel download: " + downloadFileStream);
 				if (!downloadFileStream) return;
 				updateDownloadProgressBar(0, 0);
 				stratusDao.sendStream.send("cancelDownload");
@@ -328,7 +334,6 @@
 				
 			}
 			public function cancelUpload():void {
-				trace("cancel upload: " + uploadFileStream);
 				if (!uploadFileStream) return;
 				updateUploadProgressBar(0, 0);
 				stratusDao.sendStream.send("cancelUpload");
@@ -396,6 +401,14 @@
 	
 	<mx:Boolean id="youHaveFiles">{fileInfos.length > 0}</mx:Boolean>
 	<mx:Boolean id="peerHasFiles">{peerClient.fileInfos.length > 0}</mx:Boolean>
+	
+	<analytics:FlexTracker
+        xmlns:analytics="com.google.analytics.components.*"
+        id="tracker"
+        account="UA-315746-17"
+        mode="AS3"
+        visualDebug="true"
+     />
 	
 	<mx:transitions>
 		<mx:Transition fromState="*" toState="*">
