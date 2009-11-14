@@ -7,7 +7,7 @@ global {
 }
 Application {
 	backgroundGradientAlphas: 1.0, 1.0;
-	backgroundGradientColors: #ccd4e8, #ffffff;
+	backgroundGradientColors: #d5d9e2, #ffffff;
 }
 
 CSSImage.logo {
