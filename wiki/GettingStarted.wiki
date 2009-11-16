@@ -1,0 +1,8 @@
+#summary Getting started with the source code.
+#labels Featured,Phase-Implementation
+
+= Getting Started =
+
+To develop with BelugaFile, you will first need to sign up for a stratus beta developer key.  You can do that here: http://labs.adobe.com/technologies/stratus/
+
+Once you have a key, modify the src/StratusKey.as.remove file and replace [your key here] with your stratus key.  Then take off the .remove on the filename.
