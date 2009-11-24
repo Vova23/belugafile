@@ -99,6 +99,9 @@ Button.copyButton {
 Button.cancelButton {
 	icon: Embed(source='images/cancl_16.png');
 }
+Button.linkButton {
+	icon: Embed(source='images/link.png');	
+}
 
 .udpNote {
 	text-align: center;
