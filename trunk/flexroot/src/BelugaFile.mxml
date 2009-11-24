@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<mx:WindowedApplication xmlns:mx="http://www.adobe.com/2006/mxml" layout="absolute" xmlns:belugafile="com.nbilyk.belugafile.*" applicationComplete="applicationComplete();">
+<mx:WindowedApplication xmlns:mx="http://www.adobe.com/2006/mxml"
+						layout="absolute"
+						xmlns:belugafile="com.nbilyk.belugafile.*"
+						preinitialize="preinitializeHandler(event);"
+						applicationComplete="applicationCompleteHandler(event);">
 	<mx:Style source="styles/defaults.css"/>
 	
 	<mx:Script>
 		<![CDATA[
+			import mx.events.FlexEvent;
 			import com.nbilyk.display.MessageNotifier;
 			import air.update.events.StatusUpdateErrorEvent;
 			import air.update.events.UpdateEvent;
@@ -16,11 +21,17 @@
 			// Automatic updater.
 			//------------------------
 			
-			private function applicationComplete():void {
+			[Bindable] private var invokedPeerId:String;
+			
+			private function preinitializeHandler(event:FlexEvent):void {
+				nativeApplication.addEventListener(BrowserInvokeEvent.BROWSER_INVOKE, browserInvokeHandler);
+			}
+			
+			private function applicationCompleteHandler(event:FlexEvent):void {
 				appUpdater = new ApplicationUpdaterUI();
 				appUpdater.configurationFile = new File("app:/config/update-config.xml");
-				appUpdater.addEventListener(ErrorEvent.ERROR, onError, false, 0, true);
 				appUpdater.addEventListener(UpdateEvent.INITIALIZED, updaterInitializedHandler, false, 0, true);
+				appUpdater.addEventListener(ErrorEvent.ERROR, onError, false, 0, true);
 				appUpdater.addEventListener(StatusUpdateErrorEvent.UPDATE_ERROR, updateErrorHandler, false, 0, true);
 				appUpdater.initialize();
 			}
@@ -34,6 +45,16 @@
 				handleError(event.text);
 			}
 			
+			private function browserInvokeHandler(event:BrowserInvokeEvent):void {
+				if (event.arguments && event.arguments.length >= 2) {
+					var action:String = event.arguments[0] as String;
+					if (action == "connectToPeer") {
+						invokedPeerId = event.arguments[1] as String;
+						return;
+					}
+				}
+			}
+			
 			//----------------------
 			// Error handling
 			//----------------------
@@ -44,5 +65,5 @@
 		]]>
 	</mx:Script>
 	
-	<belugafile:Main width="100%" height="100%"/>
+	<belugafile:Main width="100%" height="100%" peerId="{invokedPeerId}" />
 </mx:WindowedApplication>
